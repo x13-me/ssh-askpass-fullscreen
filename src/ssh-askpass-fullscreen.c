@@ -1,5 +1,6 @@
 /* Copyright (C) 2002-2003 Christopher R. Gabriel <cgabriel@cgabriel.org>
  * Copyright (C) 2009 Adam James <atj@pulsewidth.org.uk>
+ * Copyright (C) 2026 x13-me <github+ssh-askpass-fullscreen@x13.me>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,79 +42,11 @@
 #define ATTR_UNUSED
 #endif
 
-/* XPM */
-static const char *ocean_stripes[] = {
-/* columns rows colors chars-per-pixel */
-"64 64 3 1",
-"  c #A0A9C1",
-". c #B3BCC8",
-"X c #CCD0D7",
-/* pixels */
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                ",
-"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-"................................................................",
-"                                                                ",
-"                                                                "
-};
+#ifndef PKGDATADIR
+#define PKGDATADIR "."
+#endif
+
+#define BACKGROUND_IMAGE PKGDATADIR "/background.png"
 
 GtkWidget *window, *label, *entry;
 gint grab_server, grab_pointer;
@@ -137,73 +70,6 @@ report_failed_grab (const char *what)
 	gtk_dialog_run(GTK_DIALOG(err));
 
 	gtk_widget_destroy(err);
-}
-
-static GdkPixbuf *
-create_tile_pixbuf (GdkPixbuf    *dest_pixbuf,
-		    GdkPixbuf    *src_pixbuf,
-		    GdkRectangle *field_geom,
-		    guint         alpha,
-		    GdkColor     *bg_color) 
-{
-	gboolean need_composite;
-	gboolean use_simple;
-	gdouble cx, cy;
-	gdouble colorv;
-	gint pwidth, pheight;
-
-	need_composite = (alpha < 255 || gdk_pixbuf_get_has_alpha (src_pixbuf));
-	use_simple = (dest_pixbuf == NULL);
-
-	if (dest_pixbuf == NULL)
-		dest_pixbuf = gdk_pixbuf_new (GDK_COLORSPACE_RGB, FALSE, 8, field_geom->width, field_geom->height);
-
-	if (need_composite && use_simple)
-		colorv = ((bg_color->red & 0xff00) << 8) |
-			(bg_color->green & 0xff00) |
-			((bg_color->blue & 0xff00) >> 8);
-	else
-		colorv = 0;
-
-	pwidth = gdk_pixbuf_get_width (src_pixbuf);
-	pheight = gdk_pixbuf_get_height (src_pixbuf);
-
-	for (cy = 0; cy < field_geom->height; cy += pheight) {
-		for (cx = 0; cx < field_geom->width; cx += pwidth) {
-			if (need_composite && !use_simple)
-				gdk_pixbuf_composite
-					(src_pixbuf, dest_pixbuf,
-					 cx, cy,
-					 MIN (pwidth, field_geom->width - cx), 
-					 MIN (pheight, field_geom->height - cy),
-					 cx, cy,
-					 1.0, 1.0,
-					 GDK_INTERP_BILINEAR,
-					 alpha);
-			else if (need_composite && use_simple)
-				gdk_pixbuf_composite_color
-					(src_pixbuf, dest_pixbuf,
-					 cx, cy,
-					 MIN (pwidth, field_geom->width - cx), 
-					 MIN (pheight, field_geom->height - cy),
-					 cx, cy,
-					 1.0, 1.0,
-					 GDK_INTERP_BILINEAR,
-					 alpha,
-					 65536, 65536, 65536,
-					 colorv, colorv);
-			else
-				gdk_pixbuf_copy_area
-					(src_pixbuf,
-					 0, 0,
-					 MIN (pwidth, field_geom->width - cx),
-					 MIN (pheight, field_geom->height - cy),
-					 dest_pixbuf,
-					 cx, cy);
-		}
-	}
-
-	return dest_pixbuf;
 }
 
 void
@@ -264,10 +130,9 @@ void
 passphrase_dialog(char *message)
 {
 	GtkWidget *frame, *align, *vbox, *hbox;
-	GdkPixbuf *tmp_pixbuf, *pixbuf, *tile_pixbuf;
+	GdkPixbuf *tmp_pixbuf, *pixbuf, *scaled_pixbuf;
 	GdkPixmap *pixmap;
-	GdkRectangle rect;
-	GdkColor color;
+	GError *err = NULL;
 	gchar *escaped_message, *str;
 	GdkGrabStatus status;
 	int grab_tries = 0;
@@ -303,31 +168,33 @@ passphrase_dialog(char *message)
 						  monitor_geometry.width,
 						  monitor_geometry.height);
 
-	pixbuf = gdk_pixbuf_new_from_xpm_data(ocean_stripes);
-	
-	rect.x = 0;
-	rect.y = 0;
-	rect.width = monitor_geometry.width;
-	rect.height = monitor_geometry.height;
+	pixbuf = gdk_pixbuf_new_from_file(BACKGROUND_IMAGE, &err);
+	if (pixbuf == NULL) {
+		g_printerr("Failed to load background image '%s': %s\n",
+		           BACKGROUND_IMAGE,
+		           err ? err->message : "unknown error");
+		if (err)
+			g_error_free(err);
+		gtk_main_quit();
+		return;
+	}
 
-	color.red = 0;
-	color.blue = 0;
-	color.green = 0;
-
- 	tile_pixbuf = create_tile_pixbuf(NULL, pixbuf,
-					 &rect, 155,
-					 &color);
+	scaled_pixbuf = gdk_pixbuf_scale_simple(
+		pixbuf,
+		monitor_geometry.width,
+		monitor_geometry.height,
+		GDK_INTERP_BILINEAR);
 
 	g_object_unref(pixbuf);
-	
-	gdk_pixbuf_composite(tile_pixbuf, tmp_pixbuf,
+
+	gdk_pixbuf_composite(scaled_pixbuf, tmp_pixbuf,
 			     0, 0,
 			     monitor_geometry.width,
 			     monitor_geometry.height,
 			     0, 0, 1, 1,
 			     GDK_INTERP_NEAREST, 200);
 
-	g_object_unref(tile_pixbuf);
+	g_object_unref(scaled_pixbuf);
 
 	pixmap = gdk_pixmap_new(GTK_WIDGET(window)->window,
 				monitor_geometry.width,

@@ -1,3 +1,7 @@
+2026-03-08	x13-me <github+ssh-askpass-fullscreen@x13.me>
+	* Refactor to use predefined PNG
+	* Add Nix tooling (flake.nix)
+
 2022-12-20  Adam James <atj@pulsewidth.org.uk>
 	* Escape message passed to gtk_label_set_markup().
 
